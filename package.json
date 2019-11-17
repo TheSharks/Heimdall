@@ -1,0 +1,35 @@
+{
+  "private": true,
+  "name": "@thesharks/heimdall",
+  "version": "1.0.0",
+  "description": "Extremely scalable Discord gateway middleman",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Remco Jongschaap <hello@dougley.com>",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/TheSharks/Heimdall/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheSharks/Heimdall.git"
+  },
+  "dependencies": {
+    "dotenv": "^8.2.0",
+    "erlpack": "git+https://github.com/discordapp/erlpack.git",
+    "superagent": "^5.1.0",
+    "ws": "^7.2.0",
+    "zlib-sync": "^0.1.6"
+  },
+  "devDependencies": {
+    "eslint": "^6.6.0",
+    "eslint-config-standard": "^14.1.0",
+    "eslint-plugin-import": "^2.18.2",
+    "eslint-plugin-node": "^10.0.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.1"
+  }
+}
