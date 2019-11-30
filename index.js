@@ -1,10 +1,10 @@
 (async () => {
   require('dotenv').config()
-  const Socket = require('./src/classes/SocketManager')
+  const SocketManager = require('./src/classes/SocketManager')
+  const AMPQChannel = require('./src/classes/AMQPManager')
 
-  const manager = await Socket.build(process.env.DISCORD_TOKEN)
+  const manager = await SocketManager.build(process.env.DISCORD_TOKEN)
+  const channel = await AMPQChannel.build(process.env.AMQP_URI, process.env.AMQP_QUEUE || 'wildbeast')
 
-  setInterval(() => {
-    console.log(manager.status)
-  }, 2000)
+  manager.on('all-data', x => channel.send(x))
 })()
