@@ -2,7 +2,7 @@ const WebSocket = require('ws')
 const { EventEmitter } = require('events')
 const { OPCodes, SocketTimeout } = require('../constants')
 const Erlpack = require('erlpack')
-const ZlibSync = require('zlib-sync')
+// const ZlibSync = require('zlib-sync')
 
 class DiscordWebsocket extends EventEmitter {
   constructor (token, url, shardTuple) {
@@ -10,6 +10,9 @@ class DiscordWebsocket extends EventEmitter {
     this._gateway = url || 'wss://gateway.discord.gg'
     this._token = token
     this._socket = null
+    this._shardConfig = shardTuple
+    this.id = shardTuple[0]
+    this.state = 'idle'
     this._cache = {
       session_id: null,
       seq: null,
@@ -19,11 +22,16 @@ class DiscordWebsocket extends EventEmitter {
 
   send (op, d) {
     if (this._socket.readyState !== WebSocket.OPEN) return
-    console.log('S:', JSON.stringify({ op: op, d: d }))
+    console.log(this._shardConfig, 'S:', JSON.stringify({ op: op, d: d }))
     return this._socket.send(Erlpack.pack({ op: op, d: d }))
   }
 
   identify () {
+    this.state = 'identifying'
+    this._connectTimeout = setTimeout(() => {
+      super.emit('warn', 'Identify timeout')
+      this.reset()
+    }, SocketTimeout)
     if (this._cache.session_id) {
       // attempt to resume
       this.send(OPCodes.RESUME, this._cache)
@@ -38,7 +46,8 @@ class DiscordWebsocket extends EventEmitter {
           $device: libID
         },
         guild_subscriptions: false,
-        compress: true
+        compress: true,
+        shard: this._shardConfig
       }
       this.send(OPCodes.IDENTIFY, payload)
     }
@@ -47,18 +56,18 @@ class DiscordWebsocket extends EventEmitter {
   onMessage (msg) {
     let packet
     try {
-      if (msg.data.length >= 4 && msg.data.readUInt32BE(msg.data.length - 4) === 0xFFFF) this._zlibSync.push(msg.data, ZlibSync.Z_SYNC_FLUSH)
-      if (this._zlibSync.err) {
-        super.emit('error', new Error(`ZLib error: ${this._zlibSync.err}: ${this._zlibSync.msg}`))
-        return
-      }
-      packet = Buffer.from(this._zlibSync.result)
-      packet = Erlpack.unpack(packet)
+      // if (msg.data.length >= 4 && msg.data.readUInt32BE(msg.data.length - 4) === 0xFFFF) this._zlibSync.push(msg.data, ZlibSync.Z_SYNC_FLUSH)
+      // if (this._zlibSync.err) {
+      //   super.emit('error', new Error(`ZLib error: ${this._zlibSync.err}: ${this._zlibSync.msg}`))
+      //   return
+      // }
+      // packet = Buffer.from(this._zlibSync.result)
+      packet = Erlpack.unpack(msg.data)
     } catch (e) {
-      console.error(e)
+      super.emit('error', e)
       return
     }
-    console.log('R:', JSON.stringify(packet))
+    console.log(this._shardConfig, 'R:', JSON.stringify(packet))
     if (packet.s > this._cache.seq) this._cache.seq = packet.s
     return this.onWSMessage(packet)
   }
@@ -69,15 +78,20 @@ class DiscordWebsocket extends EventEmitter {
         if (data.t === 'READY' || data.t === 'RESUMED') {
           clearTimeout(this._connectTimeout)
           this.ready = true
+          this.state = 'ready'
         }
         super.emit('data', data)
         break
       }
       case OPCodes.HELLO: {
+        clearTimeout(this._connectTimeout)
         this._gatewayTrace = data.d._trace
         this.identify()
         this._heartbeat = setInterval(() => {
-          if (this._lastHeartbeatAcknowledged === false) super.emit('warn', 'Last heartbeat was not acknowledged, the socket might be dead')
+          if (this._lastHeartbeatAcknowledged === false) {
+            super.emit('warn', 'Last heartbeat was not acknowledged, reidentifying')
+            this.close()
+          }
           this._lastHeartbeatSent = Date.now()
           this._lastHeartbeatAcknowledged = false
           this.send(OPCodes.HEARTBEAT, this._cache.seq)
@@ -86,15 +100,15 @@ class DiscordWebsocket extends EventEmitter {
       }
       case OPCodes.RECONNECT: {
         this.reset()
-        this.connect()
         break
       }
       case OPCodes.INVALID_SESSION: {
         if (data.d === true) {
           this.identify()
         } else {
+          if (this._connectTimeout) clearTimeout(this._connectTimeout)
           this.softReset()
-          setTimeout(() => this.identify(), SocketTimeout)
+          setTimeout(() => this.identify(), 2500)
         }
         break
       }
@@ -106,8 +120,32 @@ class DiscordWebsocket extends EventEmitter {
     }
   }
 
-  onClose () {
-
+  onClose (ctx) {
+    this.state = 'disconnected'
+    super.emit('close', ctx)
+    switch (ctx.code) {
+      case 4001:
+      case 4002:
+      case 4003:
+      case 4005:
+      case 4006:
+      case 4007:
+      case 4008:
+      case 1006:
+        this.reset()
+        this.connect()
+        break
+      case 4010:
+      case 4011:
+        this.state = 'reconnection-impossible'
+        super.emit('error', new Error(`Close code ${ctx.code} is preventing a reconnect`))
+        break
+      default:
+        if (!ctx.wasClean) super.emit('debug', 'Closed with a unknown close code:', ctx.code)
+        this.reset()
+        this.connect()
+        break
+    }
   }
 
   get latency () {
@@ -115,10 +153,20 @@ class DiscordWebsocket extends EventEmitter {
     else return 0
   }
 
-  reset () {
+  close () {
+    this.state = 'disconnected'
     if (this._socket) this._socket.close()
     if (this._heartbeat) clearInterval(this._heartbeat)
-    this._socket = null
+  }
+
+  reset () {
+    this.state = 'disconnected'
+    if (this._socket && this._socket.readyState === WebSocket.OPEN) this._socket.close()
+    if (this._heartbeat) clearInterval(this._heartbeat)
+    if (this._connectTimeout) clearTimeout(this._connectTimeout)
+    delete this._connectTimeout
+    delete this._heartbeat
+    delete this._socket
     this._cache = {
       session_id: null,
       seq: null,
@@ -127,6 +175,7 @@ class DiscordWebsocket extends EventEmitter {
   }
 
   softReset () {
+    this.state = 'reset'
     this._cache = {
       session_id: null,
       seq: null,
@@ -135,17 +184,18 @@ class DiscordWebsocket extends EventEmitter {
   }
 
   connect () {
+    this.state = 'connecting'
     this.ready = false
-    const ws = this._socket = new WebSocket(`${this._gateway}/?v=6&encoding=etf&compress=zlib-stream`)
+    const ws = this._socket = new WebSocket(`${this._gateway}/?v=6&encoding=etf`)
     ws.onmessage = this.onMessage.bind(this)
     ws.onclose = this.onClose.bind(this)
     this._connectTimeout = setTimeout(() => {
-      this._socket.close()
-      this.connect()
+      super.emit('warn', 'Connection timeout')
+      this.reset()
     }, SocketTimeout)
-    this._zlibSync = new ZlibSync.Inflate({
-      chunkSize: 128 * 1024
-    })
+    // this._zlibSync = new ZlibSync.Inflate({
+    //   chunkSize: 128 * 1024
+    // })
   }
 }
 

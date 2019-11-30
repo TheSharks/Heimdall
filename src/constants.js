@@ -1,5 +1,5 @@
 module.exports = {
-  SocketTimeout: 5000,
+  SocketTimeout: 15000,
   OPCodes: {
     EVENT: 0,
     HEARTBEAT: 1,
@@ -15,5 +15,18 @@ module.exports = {
     HEARTBEAT_ACK: 11,
     SYNC_GUILD: 12,
     SYNC_CALL: 13
+  },
+  SocketCloseCodes: {
+    UNKNOWN: 4000,
+    OPCODE_UNKNOWN: 4001,
+    DECODE_ERROR: 4002,
+    UNAUTHENTICATED: 4003,
+    AUTH_FAILED: 4004,
+    ALREADY_AUTHED: 4005,
+    INVALID_SEQ: 4007,
+    RATELIMITED: 4008,
+    SESSION_TIMEOUT: 4009,
+    SHARD_INVALID: 4010,
+    SHARDING_REQUIRED: 4011
   }
 }

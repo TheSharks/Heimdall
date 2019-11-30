@@ -21,8 +21,7 @@
     "dotenv": "^8.2.0",
     "erlpack": "git+https://github.com/discordapp/erlpack.git",
     "superagent": "^5.1.0",
-    "ws": "^7.2.0",
-    "zlib-sync": "^0.1.6"
+    "ws": "^7.2.0"
   },
   "devDependencies": {
     "eslint": "^6.6.0",

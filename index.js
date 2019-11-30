@@ -1,6 +1,10 @@
-require('dotenv').config()
+(async () => {
+  require('dotenv').config()
+  const Socket = require('./src/classes/SocketManager')
 
-const Socket = require('./src/classes/DiscordWebsocket')
+  const manager = await Socket.build(process.env.DISCORD_TOKEN)
 
-const test = new Socket(process.env.DISCORD_TOKEN)
-test.connect()
+  setInterval(() => {
+    console.log(manager.status)
+  }, 2000)
+})()
