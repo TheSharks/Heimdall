@@ -16,7 +16,7 @@ class DiscordWebsocket extends EventEmitter {
     this._cache = {
       session_id: null,
       seq: null,
-      get token () { return this._token }
+      token: this._token
     }
   }
 
@@ -79,6 +79,7 @@ class DiscordWebsocket extends EventEmitter {
           clearTimeout(this._connectTimeout)
           this.ready = true
           this.state = 'ready'
+          if (data.d.session_id) this._cache.session_id = data.d.session_id
         }
         super.emit('data', data)
         break
@@ -124,25 +125,31 @@ class DiscordWebsocket extends EventEmitter {
     this.state = 'disconnected'
     super.emit('close', ctx)
     switch (ctx.code) {
+      case 4000:
       case 4001:
       case 4002:
       case 4003:
       case 4005:
-      case 4006:
+        this.reset(true)
+        this.connect()
+        break
+      case 4006: // this close code is removed from documentation since gateway v6, but it still fires :( in gateway v5 it used to mean "invalid session"
       case 4007:
       case 4008:
+      case 4009:
       case 1006:
         this.reset()
         this.connect()
         break
+      case 4004:
       case 4010:
       case 4011:
         this.state = 'reconnection-impossible'
         super.emit('error', new Error(`Close code ${ctx.code} is preventing a reconnect`))
         break
       default:
-        if (!ctx.wasClean) super.emit('debug', 'Closed with a unknown close code:', ctx.code)
-        this.reset()
+        if (!ctx.wasClean) super.emit('debug', 'Uncleanly closed with a unknown close code:', ctx.code)
+        this.reset(true)
         this.connect()
         break
     }
@@ -159,18 +166,19 @@ class DiscordWebsocket extends EventEmitter {
     if (this._heartbeat) clearInterval(this._heartbeat)
   }
 
-  reset () {
+  reset (keep = false) {
     this.state = 'disconnected'
     if (this._socket && this._socket.readyState === WebSocket.OPEN) this._socket.close()
     if (this._heartbeat) clearInterval(this._heartbeat)
     if (this._connectTimeout) clearTimeout(this._connectTimeout)
+    this._lastHeartbeatAcknowledged = true
     delete this._connectTimeout
     delete this._heartbeat
     delete this._socket
     this._cache = {
-      session_id: null,
-      seq: null,
-      get token () { return this._token }
+      session_id: keep ? this._cache.session_id : null,
+      seq: keep ? this._cache.seq : null,
+      token: this._token
     }
   }
 
@@ -179,7 +187,7 @@ class DiscordWebsocket extends EventEmitter {
     this._cache = {
       session_id: null,
       seq: null,
-      get token () { return this._token }
+      token: this._token
     }
   }
 
